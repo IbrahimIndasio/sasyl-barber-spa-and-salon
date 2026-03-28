@@ -27,6 +27,10 @@ const Navbar = () => {
   };
 
   const userLabel = user?.displayName?.trim()?.[0] || user?.email?.trim()?.[0] || 'S';
+  const portalLinks = [
+    { name: 'Admin', path: '/admin' },
+    { name: 'Staff', path: '/staff' },
+  ];
 
   return (
     <nav className="fixed w-full z-50 bg-black/80 backdrop-blur-md border-b border-white/10">
@@ -41,6 +45,17 @@ const Navbar = () => {
             {navLinks.map((link) => (
               <Link
                 key={link.name}
+                to={link.path}
+                className={`text-sm font-medium tracking-widest uppercase transition-colors hover:text-orange-500 ${
+                  location.pathname === link.path ? 'text-orange-500' : 'text-white/70'
+                }`}
+              >
+                {link.name}
+              </Link>
+            ))}
+            {portalLinks.map((link) => (
+              <Link
+                key={link.path}
                 to={link.path}
                 className={`text-sm font-medium tracking-widest uppercase transition-colors hover:text-orange-500 ${
                   location.pathname === link.path ? 'text-orange-500' : 'text-white/70'
@@ -105,6 +120,16 @@ const Navbar = () => {
               {navLinks.map((link) => (
                 <Link
                   key={link.name}
+                  to={link.path}
+                  onClick={() => setIsOpen(false)}
+                  className="block text-lg font-medium text-white/70 hover:text-orange-500"
+                >
+                  {link.name}
+                </Link>
+              ))}
+              {portalLinks.map((link) => (
+                <Link
+                  key={link.path}
                   to={link.path}
                   onClick={() => setIsOpen(false)}
                   className="block text-lg font-medium text-white/70 hover:text-orange-500"
@@ -212,6 +237,7 @@ const Footer = () => {
           <p>Copyright 2026 Sasyl Barber, Spa and Salon. All rights reserved.</p>
           <div className="mt-4 md:mt-0 space-x-6">
             <Link to="/staff" className="hover:text-white transition-colors">Staff Login</Link>
+            <Link to="/admin" className="hover:text-white transition-colors">Admin Portal</Link>
             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
           </div>
         </div>

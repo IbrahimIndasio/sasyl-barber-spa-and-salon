@@ -10,6 +10,42 @@ type FirebaseClientConfig = FirebaseOptions & {
 export const firebaseSetupMessage =
   'Firebase is not configured. Add VITE_FIREBASE_* values to .env.local or update firebase-applet-config.json.';
 
+function getCurrentHost() {
+  return typeof window !== 'undefined' ? window.location.hostname : 'this domain';
+}
+
+function getFirebaseErrorMessage(error: unknown) {
+  const errorCode =
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+      ? error.code
+      : '';
+
+  if (errorCode === 'auth/unauthorized-domain') {
+    return `Google sign-in is blocked for ${getCurrentHost()}. In Firebase Console > Authentication > Settings > Authorized domains, add ${getCurrentHost()} and try again.`;
+  }
+
+  if (errorCode === 'auth/popup-closed-by-user') {
+    return 'The Google sign-in popup was closed before login completed.';
+  }
+
+  if (errorCode === 'auth/popup-blocked') {
+    return 'Your browser blocked the Google sign-in popup. Allow popups for this site and try again.';
+  }
+
+  if (errorCode === 'auth/cancelled-popup-request') {
+    return 'Another sign-in request is already in progress. Wait a moment and try again.';
+  }
+
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+
+  return 'Unable to sign in right now.';
+}
+
 function normalizeConfig(config?: FirebaseClientConfig | null): FirebaseClientConfig | null {
   if (!config) {
     return null;
@@ -74,7 +110,7 @@ export const signInWithGoogle = async () => {
     return result.user;
   } catch (error) {
     console.error('Error signing in with Google:', error);
-    throw error;
+    throw new Error(getFirebaseErrorMessage(error));
   }
 };
 

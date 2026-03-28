@@ -8,6 +8,7 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import Booking from './pages/Booking';
 import Staff from './pages/Staff';
+import Admin from './pages/Admin';
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/booking" element={<Booking />} />
             <Route path="/staff" element={<Staff />} />
+            <Route path="/admin" element={<Admin />} />
           </Routes>
         </Layout>
       </Router>

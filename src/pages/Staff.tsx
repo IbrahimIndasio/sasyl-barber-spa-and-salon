@@ -1,51 +1,16 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { AlertCircle, Calendar, LayoutDashboard, LogIn, User, XCircle } from 'lucide-react';
-import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import { db, firebaseEnabled, firebaseSetupMessage, signInWithGoogle } from '../lib/firebase';
 import { Booking } from '../types';
+import { normalizeBookingSnapshot } from '../lib/bookings';
 import { cn } from '../lib/utils';
 
-function normalizeBooking(snapshot: QueryDocumentSnapshot<DocumentData>): Booking {
-  const data = snapshot.data();
-  const dateValue = data.date;
-  const createdAtValue = data.createdAt;
-
-  return {
-    id: snapshot.id,
-    userId: data.userId ?? '',
-    userEmail: data.userEmail ?? '',
-    userName: data.userName ?? 'Client',
-    serviceId: data.serviceId ?? '',
-    serviceName: data.serviceName ?? 'Service',
-    price: typeof data.price === 'number' ? data.price : 0,
-    staffId: data.staffId,
-    date:
-      typeof dateValue === 'string'
-        ? dateValue
-        : typeof dateValue?.toDate === 'function'
-          ? dateValue.toDate().toISOString()
-          : new Date().toISOString(),
-    status:
-      data.status === 'confirmed' ||
-      data.status === 'cancelled' ||
-      data.status === 'completed'
-        ? data.status
-        : 'pending',
-    notes: typeof data.notes === 'string' ? data.notes : undefined,
-    createdAt:
-      typeof createdAtValue === 'string'
-        ? createdAtValue
-        : typeof createdAtValue?.toDate === 'function'
-          ? createdAtValue.toDate().toISOString()
-          : undefined,
-  };
-}
-
 export default function Staff() {
-  const { user, profile, isStaff, loading: authLoading } = useAuth();
+  const { user, profile, isAdmin, isStaff, loading: authLoading } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -76,7 +41,7 @@ export default function Staff() {
     const unsubscribe = onSnapshot(
       bookingsQuery,
       (snapshot) => {
-        setBookings(snapshot.docs.map(normalizeBooking));
+        setBookings(snapshot.docs.map(normalizeBookingSnapshot));
         setLoading(false);
         setErrorMessage(null);
       },
@@ -166,17 +131,27 @@ export default function Staff() {
             </div>
             <h1 className="text-4xl md:text-6xl font-bold tracking-tighter uppercase">Manage Bookings</h1>
           </div>
-          <div className="flex items-center space-x-4 bg-white/5 p-4 rounded-2xl border border-white/10">
-            {user.photoURL ? (
-              <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full" />
-            ) : (
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase">
-                {user.displayName?.trim()?.[0] || user.email?.trim()?.[0] || 'S'}
-              </div>
+          <div className="flex flex-wrap items-center justify-end gap-4">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="rounded-full border border-orange-500/40 bg-orange-500/10 px-5 py-3 text-xs font-bold uppercase tracking-widest text-orange-300 transition-all hover:border-orange-400 hover:bg-orange-500 hover:text-black"
+              >
+                Open Admin Reports
+              </Link>
             )}
-            <div>
-              <p className="font-bold">{user.displayName || profile?.displayName || 'Staff'}</p>
-              <p className="text-orange-500 text-[10px] font-bold uppercase tracking-widest">{profile?.role || 'staff'}</p>
+            <div className="flex items-center space-x-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+              {user.photoURL ? (
+                <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full" />
+              ) : (
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase">
+                  {user.displayName?.trim()?.[0] || user.email?.trim()?.[0] || 'S'}
+                </div>
+              )}
+              <div>
+                <p className="font-bold">{user.displayName || profile?.displayName || 'Staff'}</p>
+                <p className="text-orange-500 text-[10px] font-bold uppercase tracking-widest">{profile?.role || 'staff'}</p>
+              </div>
             </div>
           </div>
         </div>
