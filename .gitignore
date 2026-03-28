@@ -4,8 +4,11 @@ dist/
 coverage/
 .npm-cache/
 .vite/
+.firebase/
+.vercel/
 .DS_Store
 *.log
+firebase-debug.log
 *.tsbuildinfo
 .env
 .env.local
