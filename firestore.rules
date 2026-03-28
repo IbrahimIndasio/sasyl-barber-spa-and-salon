@@ -1,0 +1,140 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - role: string (required, ['client', 'staff', 'admin'])
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: services
+    // Document ID: {serviceId}
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - category: string (required, ['Barbering', 'Hair Salon', 'Spa'])
+    //   - description: string (required)
+    //   - price: number (required)
+    //   - duration: number (required)
+    //   - imageUrl: string (optional)
+    //
+    // Collection: bookings
+    // Document ID: {bookingId}
+    // Fields:
+    //   - id: string (required)
+    //   - userId: string (required)
+    //   - serviceId: string (required)
+    //   - staffId: string (optional)
+    //   - date: timestamp (required)
+    //   - status: string (required, ['pending', 'confirmed', 'cancelled', 'completed'])
+    //   - notes: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: staff
+    // Document ID: {staffId}
+    // Fields:
+    //   - uid: string (required)
+    //   - name: string (required)
+    //   - specialization: string (required)
+    //   - bio: string (required)
+    //   - photoURL: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "ibrahimliyai2@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isStaff() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'staff' || isAdmin());
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+        data.uid is string && data.uid.size() > 0 &&
+        data.email is string && isValidEmail(data.email) &&
+        data.role in ['client', 'staff', 'admin'] &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidService(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'category', 'description', 'price', 'duration', 'imageUrl']) &&
+        data.id is string && data.name is string && data.name.size() < 100 &&
+        data.category in ['Barbering', 'Hair Salon', 'Spa'] &&
+        data.price is number && data.price >= 0 &&
+        data.duration is number && data.duration > 0;
+    }
+
+    function isValidBooking(data) {
+      return hasOnlyAllowedFields(['id', 'userId', 'serviceId', 'staffId', 'date', 'status', 'notes', 'createdAt']) &&
+        data.userId is string && data.serviceId is string &&
+        data.date is timestamp &&
+        data.status in ['pending', 'confirmed', 'cancelled', 'completed'] &&
+        data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'client' || isAdmin());
+      allow update: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /services/{serviceId} {
+      allow read: if true; // Publicly viewable
+      allow write: if isAdmin();
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.userId || isStaff());
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidBooking(request.resource.data);
+      allow update: if isAuthenticated() && (request.auth.uid == resource.data.userId || isStaff()) && isValidBooking(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /staff/{staffId} {
+      allow read: if true; // Publicly viewable
+      allow write: if isAdmin();
+    }
+
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

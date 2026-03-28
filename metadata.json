@@ -1,0 +1,5 @@
+{
+  "name": "Sasyl Barber, Spa and Salon",
+  "description": "Premium grooming and wellness services in Donholm, Nairobi. Barbering, hair salon, and spa treatments.",
+  "requestFramePermissions": ["geolocation"]
+}

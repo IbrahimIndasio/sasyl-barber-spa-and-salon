@@ -1,0 +1,13 @@
+node_modules/
+build/
+dist/
+coverage/
+.npm-cache/
+.vite/
+.DS_Store
+*.log
+*.tsbuildinfo
+.env
+.env.local
+.env.*.local
+!.env.example
