@@ -1,9 +1,89 @@
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import type { Booking, BookingStatus } from '../types';
 
-function parseBookingDate(dateValue: string) {
+export interface BookingDateRange {
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+export function parseBookingDate(dateValue: string) {
   const parsedDate = new Date(dateValue);
   return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+function normalizeRangeBoundary(value: string | null | undefined, boundary: 'start' | 'end') {
+  if (!value) {
+    return null;
+  }
+
+  const parsedDate = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return null;
+  }
+
+  if (boundary === 'end') {
+    parsedDate.setHours(23, 59, 59, 999);
+  }
+
+  return parsedDate;
+}
+
+export function filterBookingsByDateRange(bookings: Booking[], range: BookingDateRange) {
+  const startDate = normalizeRangeBoundary(range.startDate, 'start');
+  const endDate = normalizeRangeBoundary(range.endDate, 'end');
+
+  return bookings.filter((booking) => {
+    const bookingDate = parseBookingDate(booking.date);
+    if (!bookingDate) {
+      return false;
+    }
+
+    if (startDate && bookingDate < startDate) {
+      return false;
+    }
+
+    if (endDate && bookingDate > endDate) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function escapeCsvValue(value: string | number | null | undefined) {
+  const normalizedValue = value == null ? '' : String(value);
+  const escapedValue = normalizedValue.replace(/"/g, '""');
+  return `"${escapedValue}"`;
+}
+
+export function convertBookingsToCsv(bookings: Booking[]) {
+  const header = [
+    'Booking ID',
+    'Customer Name',
+    'Customer Email',
+    'Service',
+    'Price',
+    'Date',
+    'Time',
+    'Status',
+    'User ID',
+  ];
+
+  const rows = bookings.map((booking) => [
+    booking.id,
+    booking.userName || booking.name || 'Client',
+    booking.userEmail || '',
+    booking.serviceName || booking.service || '',
+    typeof booking.price === 'number' ? booking.price : '',
+    booking.date,
+    booking.time || '',
+    booking.status,
+    booking.userId,
+  ]);
+
+  return [header, ...rows]
+    .map((row) => row.map((value) => escapeCsvValue(value)).join(','))
+    .join('\n');
 }
 
 export function normalizeBookingRecord(id: string, data: DocumentData): Booking {

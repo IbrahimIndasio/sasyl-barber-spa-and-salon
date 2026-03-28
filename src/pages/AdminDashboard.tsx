@@ -5,6 +5,7 @@ import {
   AlertCircle,
   BarChart3,
   CalendarClock,
+  Download,
   CheckCircle2,
   ClipboardList,
   DollarSign,
@@ -12,14 +13,21 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getBookingMetrics } from '../lib/bookings';
+import { convertBookingsToCsv, filterBookingsByDateRange, getBookingMetrics } from '../lib/bookings';
 import { subscribeToAllBookings, updateBookingStatus } from '../services/bookingService';
 import type { Booking } from '../types';
 import { cn } from '../lib/utils';
 
 type BookingFilter = 'all' | Booking['status'];
+type DatePreset = 'all' | 'today' | '7d' | '30d';
 
 const statusFilters: BookingFilter[] = ['all', 'pending', 'confirmed', 'completed', 'cancelled'];
+const datePresets: { label: string; value: DatePreset }[] = [
+  { label: 'All Time', value: 'all' },
+  { label: 'Today', value: 'today' },
+  { label: 'Last 7 Days', value: '7d' },
+  { label: 'Last 30 Days', value: '30d' },
+];
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-KE', {
@@ -43,21 +51,77 @@ function formatBookingDate(dateValue: string, time?: string) {
   return `${parsedDate.toLocaleDateString()} at ${timeLabel}`;
 }
 
+function toDateInputValue(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function getPresetRange(preset: DatePreset) {
+  const today = new Date();
+  const endDate = toDateInputValue(today);
+
+  if (preset === 'today') {
+    return {
+      startDate: endDate,
+      endDate,
+    };
+  }
+
+  if (preset === '7d') {
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 6);
+    return {
+      startDate: toDateInputValue(startDate),
+      endDate,
+    };
+  }
+
+  if (preset === '30d') {
+    const startDate = new Date(today);
+    startDate.setDate(startDate.getDate() - 29);
+    return {
+      startDate: toDateInputValue(startDate),
+      endDate,
+    };
+  }
+
+  return {
+    startDate: '',
+    endDate: '',
+  };
+}
+
+function downloadCsv(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminDashboard() {
   const { user, profile } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<BookingFilter>('all');
+  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
-  const metrics = useMemo(() => getBookingMetrics(bookings), [bookings]);
+  const reportBookings = useMemo(
+    () => filterBookingsByDateRange(bookings, { startDate, endDate }),
+    [bookings, endDate, startDate],
+  );
+  const metrics = useMemo(() => getBookingMetrics(reportBookings), [reportBookings]);
   const filteredBookings = useMemo(() => {
     if (activeFilter === 'all') {
-      return bookings;
+      return reportBookings;
     }
 
-    return bookings.filter((booking) => booking.status === activeFilter);
-  }, [activeFilter, bookings]);
+    return reportBookings.filter((booking) => booking.status === activeFilter);
+  }, [activeFilter, reportBookings]);
 
   useEffect(() => {
     setLoading(true);
@@ -77,6 +141,13 @@ export default function AdminDashboard() {
     return () => unsubscribe();
   }, []);
 
+  const applyDatePreset = (preset: DatePreset) => {
+    setDatePreset(preset);
+    const range = getPresetRange(preset);
+    setStartDate(range.startDate);
+    setEndDate(range.endDate);
+  };
+
   const handleStatusChange = async (id: string, status: Booking['status']) => {
     try {
       await updateBookingStatus(id, status);
@@ -84,6 +155,17 @@ export default function AdminDashboard() {
       console.error('Error updating status:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to update booking status.');
     }
+  };
+
+  const handleExport = () => {
+    if (filteredBookings.length === 0) {
+      setErrorMessage('There are no bookings to export for the current filters.');
+      return;
+    }
+
+    setErrorMessage(null);
+    const csv = convertBookingsToCsv(filteredBookings);
+    downloadCsv(`sasyl-bookings-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   };
 
   return (
@@ -141,7 +223,7 @@ export default function AdminDashboard() {
               {
                 label: 'Total Bookings',
                 value: metrics.totalBookings.toString(),
-                detail: `${metrics.thisMonthBookings} this month`,
+                detail: `${reportBookings.length} in selected range`,
                 icon: ClipboardList,
               },
               {
@@ -159,7 +241,7 @@ export default function AdminDashboard() {
               {
                 label: 'Completed Revenue',
                 value: formatCurrency(metrics.completedRevenue),
-                detail: `${metrics.todayBookings} bookings today`,
+                detail: `${metrics.completedBookings} completed bookings`,
                 icon: BarChart3,
               },
             ].map((card) => (
@@ -190,8 +272,67 @@ export default function AdminDashboard() {
                   <h2 className="text-2xl font-bold uppercase tracking-tight">Service Performance</h2>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-right">
-                  <p className="text-xs font-bold uppercase tracking-widest text-white/40">This Week</p>
-                  <p className="text-lg font-bold">{metrics.thisWeekBookings} bookings</p>
+                  <p className="text-xs font-bold uppercase tracking-widest text-white/40">Report Window</p>
+                  <p className="text-lg font-bold">{reportBookings.length} bookings</p>
+                </div>
+              </div>
+
+              <div className="mb-6 grid grid-cols-1 gap-4 rounded-3xl border border-white/10 bg-black/30 p-5 lg:grid-cols-[1.2fr_1fr_auto]">
+                <div className="space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/40">Quick Range</p>
+                  <div className="flex flex-wrap gap-3">
+                    {datePresets.map((preset) => (
+                      <button
+                        key={preset.value}
+                        onClick={() => applyDatePreset(preset.value)}
+                        className={cn(
+                          'rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
+                          datePreset === preset.value
+                            ? 'border-orange-500 bg-orange-500 text-black'
+                            : 'border-white/10 bg-black/40 text-white/55 hover:border-orange-500/40 hover:text-white',
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-white/40">Start Date</span>
+                    <input
+                      type="date"
+                      value={startDate}
+                      onChange={(event) => {
+                        setDatePreset('all');
+                        setStartDate(event.target.value);
+                      }}
+                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-all focus:border-orange-500"
+                    />
+                  </label>
+                  <label className="space-y-2">
+                    <span className="text-xs font-bold uppercase tracking-widest text-white/40">End Date</span>
+                    <input
+                      type="date"
+                      value={endDate}
+                      onChange={(event) => {
+                        setDatePreset('all');
+                        setEndDate(event.target.value);
+                      }}
+                      className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-all focus:border-orange-500"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    onClick={handleExport}
+                    className="flex w-full items-center justify-center space-x-2 rounded-2xl border border-orange-500/40 bg-orange-500/10 px-5 py-3 text-xs font-bold uppercase tracking-widest text-orange-300 transition-all hover:border-orange-400 hover:bg-orange-500 hover:text-black"
+                  >
+                    <Download className="h-4 w-4" />
+                    <span>Export CSV</span>
+                  </button>
                 </div>
               </div>
 
@@ -247,32 +388,32 @@ export default function AdminDashboard() {
           </div>
 
           <div className="rounded-[36px] border border-white/10 bg-white/5 p-6 md:p-8">
-            <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="mb-2 flex items-center space-x-3">
-                  <ShieldCheck className="h-5 w-5 text-orange-500" />
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-orange-500">Recent Bookings</span>
+              <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <div className="mb-2 flex items-center space-x-3">
+                    <ShieldCheck className="h-5 w-5 text-orange-500" />
+                    <span className="text-xs font-bold uppercase tracking-[0.25em] text-orange-500">Recent Bookings</span>
+                  </div>
+                  <h2 className="text-2xl font-bold uppercase tracking-tight">Manage Appointments</h2>
                 </div>
-                <h2 className="text-2xl font-bold uppercase tracking-tight">Manage Appointments</h2>
-              </div>
 
-              <div className="flex flex-wrap gap-3">
-                {statusFilters.map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setActiveFilter(filter)}
-                    className={cn(
-                      'rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
-                      activeFilter === filter
-                        ? 'border-orange-500 bg-orange-500 text-black'
-                        : 'border-white/10 bg-black/30 text-white/55 hover:border-orange-500/40 hover:text-white',
-                    )}
-                  >
-                    {filter}
-                  </button>
-                ))}
+                <div className="flex flex-wrap gap-3">
+                  {statusFilters.map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setActiveFilter(filter)}
+                      className={cn(
+                        'rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-widest transition-all',
+                        activeFilter === filter
+                          ? 'border-orange-500 bg-orange-500 text-black'
+                          : 'border-white/10 bg-black/30 text-white/55 hover:border-orange-500/40 hover:text-white',
+                      )}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
             {loading ? (
               <div className="flex justify-center py-20">
@@ -285,7 +426,7 @@ export default function AdminDashboard() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6">
-                {filteredBookings.slice(0, 10).map((booking) => (
+                {filteredBookings.map((booking) => (
                   <motion.div
                     key={booking.id}
                     initial={{ opacity: 0, y: 10 }}
