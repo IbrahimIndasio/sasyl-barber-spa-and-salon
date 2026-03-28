@@ -3,7 +3,6 @@ export interface BookingDraftState {
   date: string | null;
   time: string | null;
   step: number;
-  continueAfterLogin: boolean;
 }
 
 const STORAGE_KEY = 'sasyl-booking-draft';
@@ -21,8 +20,7 @@ export function loadBookingDraft(): BookingDraftState | null {
   try {
     const parsedDraft = JSON.parse(rawDraft) as BookingDraftState;
     if (
-      typeof parsedDraft.step === 'number' &&
-      typeof parsedDraft.continueAfterLogin === 'boolean'
+      typeof parsedDraft.step === 'number'
     ) {
       return parsedDraft;
     }

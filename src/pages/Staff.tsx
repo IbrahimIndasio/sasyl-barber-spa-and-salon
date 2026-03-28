@@ -1,43 +1,22 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { AlertCircle, Calendar, LayoutDashboard, LogIn, User, XCircle } from 'lucide-react';
+import { AlertCircle, Calendar, LayoutDashboard, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { firebaseEnabled, firebaseSetupMessage } from '../lib/firebase';
 import { subscribeToAllBookings, updateBookingStatus } from '../services/bookingService';
-import { Booking } from '../types';
+import type { Booking } from '../types';
 import { cn } from '../lib/utils';
 
 export default function Staff() {
-  const { user, profile, isAdmin, isStaff, loading: authLoading, loginWithGoogle } = useAuth();
+  const { user, profile } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleLogin = async () => {
-    try {
-      setErrorMessage(null);
-      await loginWithGoogle();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
-    }
-  };
-
   useEffect(() => {
-    if (!firebaseEnabled) {
-      setLoading(false);
-      return;
-    }
-
-    if (!isStaff) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
     const unsubscribe = subscribeToAllBookings(
-      (snapshot) => {
-        setBookings(snapshot);
+      (nextBookings) => {
+        setBookings(nextBookings);
         setLoading(false);
         setErrorMessage(null);
       },
@@ -49,9 +28,9 @@ export default function Staff() {
     );
 
     return () => unsubscribe();
-  }, [isStaff]);
+  }, []);
 
-  const updateStatus = async (id: string, status: Booking['status']) => {
+  const handleStatusChange = async (id: string, status: Booking['status']) => {
     try {
       await updateBookingStatus(id, status);
     } catch (error) {
@@ -59,58 +38,6 @@ export default function Staff() {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to update booking status.');
     }
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500"></div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-[40px] p-12 text-center">
-          <LogIn className="h-16 w-16 text-orange-500 mx-auto mb-8" />
-          <h1 className="text-3xl font-bold mb-4 uppercase tracking-tighter">Staff Portal</h1>
-          <p className="text-white/50 mb-10">
-            {firebaseEnabled
-              ? 'Please login with your staff account to access the dashboard.'
-              : firebaseSetupMessage}
-          </p>
-          {errorMessage && <p className="mb-6 text-sm text-red-300">{errorMessage}</p>}
-          <button
-            onClick={handleLogin}
-            className="w-full bg-orange-500 text-black py-4 rounded-full font-bold uppercase tracking-widest hover:bg-orange-400 transition-all disabled:opacity-50"
-            disabled={!firebaseEnabled}
-          >
-            Login with Google
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isStaff) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-[40px] p-12 text-center">
-          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-8" />
-          <h1 className="text-3xl font-bold mb-4 uppercase tracking-tighter">Access Denied</h1>
-          <p className="text-white/50 mb-10">You do not have permission to access the staff portal. Please contact an administrator.</p>
-          <button
-            onClick={() => {
-              window.location.href = '/';
-            }}
-            className="w-full bg-white text-black py-4 rounded-full font-bold uppercase tracking-widest"
-          >
-            Return Home
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-black min-h-screen pb-24">
@@ -123,27 +50,17 @@ export default function Staff() {
             </div>
             <h1 className="text-4xl md:text-6xl font-bold tracking-tighter uppercase">Manage Bookings</h1>
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-4">
-            {isAdmin && (
-              <Link
-                to="/admin"
-                className="rounded-full border border-orange-500/40 bg-orange-500/10 px-5 py-3 text-xs font-bold uppercase tracking-widest text-orange-300 transition-all hover:border-orange-400 hover:bg-orange-500 hover:text-black"
-              >
-                Open Admin Reports
-              </Link>
-            )}
-            <div className="flex items-center space-x-4 bg-white/5 p-4 rounded-2xl border border-white/10">
-              {user.photoURL ? (
-                <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full" />
-              ) : (
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase">
-                  {user.displayName?.trim()?.[0] || user.email?.trim()?.[0] || 'S'}
-                </div>
-              )}
-              <div>
-                <p className="font-bold">{user.displayName || profile?.displayName || 'Staff'}</p>
-                <p className="text-orange-500 text-[10px] font-bold uppercase tracking-widest">{profile?.role || 'staff'}</p>
+          <div className="flex items-center space-x-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full" />
+            ) : (
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase">
+                {user?.displayName?.trim()?.[0] || user?.email?.trim()?.[0] || 'S'}
               </div>
+            )}
+            <div>
+              <p className="font-bold">{profile?.name || user?.displayName || 'Staff'}</p>
+              <p className="text-orange-500 text-[10px] font-bold uppercase tracking-widest">{profile?.role || 'staff'}</p>
             </div>
           </div>
         </div>
@@ -210,13 +127,13 @@ export default function Staff() {
                           {booking.status}
                         </span>
                         <span className="text-white/40 text-xs font-medium uppercase tracking-widest">
-                          {new Date(booking.date).toLocaleDateString()} at {new Date(booking.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {new Date(booking.date).toLocaleDateString()} at {booking.time || new Date(booking.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                       </div>
-                      <h3 className="text-2xl font-bold mb-1">{booking.serviceName}</h3>
+                      <h3 className="text-2xl font-bold mb-1">{booking.serviceName || booking.service}</h3>
                       <div className="flex items-center space-x-2 text-white/60 text-sm">
                         <User className="h-4 w-4" />
-                        <span>{booking.userName} ({booking.userEmail})</span>
+                        <span>{booking.userName || booking.name} {booking.userEmail ? `(${booking.userEmail})` : ''}</span>
                       </div>
                       {typeof booking.price === 'number' && (
                         <p className="mt-2 text-sm text-orange-500">KES {booking.price}</p>
@@ -227,7 +144,9 @@ export default function Staff() {
                   <div className="flex flex-wrap gap-3 w-full md:w-auto">
                     {booking.status === 'pending' && (
                       <button
-                        onClick={() => updateStatus(booking.id, 'confirmed')}
+                        onClick={() => {
+                          void handleStatusChange(booking.id, 'confirmed');
+                        }}
                         className="flex-1 md:flex-none bg-green-500 text-black px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-green-400 transition-all"
                       >
                         Confirm
@@ -235,7 +154,9 @@ export default function Staff() {
                     )}
                     {booking.status !== 'completed' && booking.status !== 'cancelled' && (
                       <button
-                        onClick={() => updateStatus(booking.id, 'completed')}
+                        onClick={() => {
+                          void handleStatusChange(booking.id, 'completed');
+                        }}
                         className="flex-1 md:flex-none bg-blue-500 text-white px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-blue-400 transition-all"
                       >
                         Complete
@@ -243,7 +164,9 @@ export default function Staff() {
                     )}
                     {booking.status !== 'cancelled' && (
                       <button
-                        onClick={() => updateStatus(booking.id, 'cancelled')}
+                        onClick={() => {
+                          void handleStatusChange(booking.id, 'cancelled');
+                        }}
                         className="flex-1 md:flex-none bg-white/5 border border-white/10 text-white/50 px-6 py-3 rounded-xl font-bold text-xs uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all"
                       >
                         Cancel

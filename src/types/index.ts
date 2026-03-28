@@ -3,8 +3,10 @@ export type BookingStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed';
 
 export interface UserProfile {
   uid: string;
+  name: string;
   email: string;
   displayName?: string;
+  phone?: string;
   photoURL?: string;
   role: UserRole;
   createdAt: string;

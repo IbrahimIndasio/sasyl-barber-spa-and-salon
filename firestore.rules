@@ -9,8 +9,10 @@ service cloud.firestore {
     // Document ID: {userId}
     // Fields:
     //   - uid: string (required)
+    //   - name: string (required)
     //   - email: string (required, email format)
     //   - displayName: string (optional)
+    //   - phone: string (optional)
     //   - photoURL: string (optional)
     //   - role: string (required, ['client', 'staff', 'admin'])
     //   - createdAt: timestamp (required)
@@ -69,8 +71,7 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "ibrahimliyai2@gmail.com" && request.auth.token.email_verified == true));
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     function isStaff() {
@@ -90,9 +91,13 @@ service cloud.firestore {
     // Domain Validators
     // ===============================================================
     function isValidUser(data) {
-      return hasOnlyAllowedFields(['uid', 'email', 'displayName', 'photoURL', 'role', 'createdAt']) &&
+      return hasOnlyAllowedFields(['uid', 'name', 'email', 'displayName', 'phone', 'photoURL', 'role', 'createdAt']) &&
         data.uid is string && data.uid.size() > 0 &&
+        data.name is string && data.name.size() > 0 &&
         data.email is string && isValidEmail(data.email) &&
+        (!data.keys().hasAny(['displayName']) || data.displayName is string) &&
+        (!data.keys().hasAny(['phone']) || data.phone is string) &&
+        (!data.keys().hasAny(['photoURL']) || data.photoURL is string) &&
         data.role in ['client', 'staff', 'admin'] &&
         data.createdAt is timestamp;
     }

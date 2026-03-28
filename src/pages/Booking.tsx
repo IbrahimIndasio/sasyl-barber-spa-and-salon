@@ -1,9 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Calendar, CheckCircle2, ChevronRight, Clock, Scissors, Sparkles, Star } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { setPostLoginPath } from '../lib/authRedirect';
 import { clearBookingDraft, loadBookingDraft, saveBookingDraft } from '../lib/bookingDraft';
 import { firebaseEnabled, firebaseSetupMessage } from '../lib/firebase';
 import { createBooking } from '../services/bookingService';
@@ -28,15 +30,14 @@ const timeSlots = [
 ];
 
 export default function Booking() {
-  const { user, profile, loading: authLoading, loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
+  const { user, profile, loading: authLoading } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<typeof services[0] | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
-  const [continueAfterLogin, setContinueAfterLogin] = useState(false);
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const autoSubmitRef = useRef(false);
 
   useEffect(() => {
     const savedDraft = loadBookingDraft();
@@ -51,7 +52,6 @@ export default function Booking() {
     setSelectedDate(restoredDate && !Number.isNaN(restoredDate.getTime()) ? restoredDate : new Date());
     setSelectedTime(savedDraft.time);
     setStep(savedDraft.step);
-    setContinueAfterLogin(savedDraft.continueAfterLogin);
   }, []);
 
   useEffect(() => {
@@ -65,12 +65,33 @@ export default function Booking() {
       date: selectedDate ? selectedDate.toISOString() : null,
       time: selectedTime,
       step,
-      continueAfterLogin,
     });
-  }, [bookingStatus, continueAfterLogin, selectedDate, selectedService, selectedTime, step]);
+  }, [bookingStatus, selectedDate, selectedService, selectedTime, step]);
+
+  const redirectToLogin = () => {
+    saveBookingDraft({
+      serviceId: selectedService?.id ?? null,
+      date: selectedDate ? selectedDate.toISOString() : null,
+      time: selectedTime,
+      step,
+    });
+    setPostLoginPath('/booking');
+    navigate('/login', { state: { from: '/booking' } });
+  };
+
+  useEffect(() => {
+    if (authLoading || bookingStatus === 'success') {
+      return;
+    }
+
+    if (!user && step === 3) {
+      redirectToLogin();
+    }
+  }, [authLoading, bookingStatus, step, user]);
 
   const handleBooking = async () => {
     if (!user || !selectedService || !selectedDate || !selectedTime) {
+      redirectToLogin();
       return;
     }
 
@@ -81,7 +102,7 @@ export default function Booking() {
       await createBooking({
         userId: user.uid,
         email: user.email ?? profile?.email ?? '',
-        name: user.displayName ?? profile?.displayName ?? 'Client',
+        name: profile?.name || user.displayName || 'Client',
         serviceId: selectedService.id,
         serviceName: selectedService.name,
         price: selectedService.price,
@@ -90,50 +111,11 @@ export default function Booking() {
       });
 
       clearBookingDraft();
-      autoSubmitRef.current = false;
-      setContinueAfterLogin(false);
       setBookingStatus('success');
     } catch (error) {
       console.error('Booking error:', error);
-      autoSubmitRef.current = false;
       setBookingStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Unable to complete your booking.');
-    }
-  };
-
-  useEffect(() => {
-    if (
-      !user ||
-      !continueAfterLogin ||
-      !selectedService ||
-      !selectedDate ||
-      !selectedTime ||
-      bookingStatus !== 'idle' ||
-      autoSubmitRef.current
-    ) {
-      return;
-    }
-
-    autoSubmitRef.current = true;
-    void handleBooking();
-  }, [bookingStatus, continueAfterLogin, selectedDate, selectedService, selectedTime, user]);
-
-  const handleLogin = async () => {
-    setContinueAfterLogin(true);
-    setErrorMessage(null);
-    saveBookingDraft({
-      serviceId: selectedService?.id ?? null,
-      date: selectedDate ? selectedDate.toISOString() : null,
-      time: selectedTime,
-      step,
-      continueAfterLogin: true,
-    });
-
-    try {
-      await loginWithGoogle();
-    } catch (error) {
-      setContinueAfterLogin(false);
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
     }
   };
 
@@ -163,7 +145,7 @@ export default function Booking() {
               <div className="flex items-start space-x-3">
                 <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-orange-500" />
                 <p className="text-sm leading-relaxed text-orange-100">
-                  {firebaseSetupMessage} Booking and Google sign-in stay disabled until Firebase is configured.
+                  {firebaseSetupMessage} Booking stays disabled until Firebase is configured.
                 </p>
               </div>
             </div>
@@ -374,7 +356,7 @@ export default function Booking() {
                                   </div>
                                 )}
                                 <div>
-                                  <p className="font-bold">{user.displayName || profile?.displayName || 'Client'}</p>
+                                  <p className="font-bold">{profile?.name || user.displayName || 'Client'}</p>
                                   <p className="text-white/40 text-sm">{user.email || profile?.email || 'No email available'}</p>
                                 </div>
                               </div>
@@ -387,10 +369,7 @@ export default function Booking() {
                             </div>
                           ) : (
                             <div className="text-center py-8">
-                              <p className="text-white/50 mb-6">Please login to complete your booking.</p>
-                              <button onClick={handleLogin} className="bg-white text-black px-8 py-3 rounded-full font-bold uppercase tracking-widest text-xs disabled:opacity-50" disabled={!firebaseEnabled || bookingStatus === 'submitting'}>
-                                Login with Google
-                              </button>
+                              <p className="text-white/50">Redirecting to login...</p>
                             </div>
                           )}
                         </div>

@@ -1,59 +1,39 @@
 import { useEffect, useState } from 'react';
-import { getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, type User } from 'firebase/auth';
-import type { DocumentData } from 'firebase/firestore';
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db, firebaseEnabled, firebaseSetupMessage, getFirebaseAuthErrorMessage, googleProvider } from '../lib/firebase';
-import type { UserProfile } from '../types';
+import {
+  createUserWithEmailAndPassword,
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  updateProfile,
+  type User,
+} from 'firebase/auth';
+import { auth, firebaseEnabled, firebaseSetupMessage, getFirebaseAuthErrorMessage, googleProvider } from '../lib/firebase';
+import { createUserProfile, ensureUserProfile, normalizeUserProfile, subscribeToUserProfile } from '../services/userService';
+import type { UserProfile, UserRole } from '../types';
 
-export const ADMIN_EMAILS = ['ibrahimliyai2@gmail.com'];
-const ADMIN_EMAIL_SET = new Set(ADMIN_EMAILS.map((email) => email.toLowerCase()));
-
-export type AuthRole = 'admin' | 'customer';
+export interface SignupInput {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+}
 
 export interface AuthState {
   user: User | null;
   profile: UserProfile | null;
-  role: AuthRole;
+  role: UserRole | null;
   loading: boolean;
   authError: string | null;
   isAdmin: boolean;
   isStaff: boolean;
+  isClient: boolean;
   loginWithGoogle: () => Promise<'popup' | 'redirect'>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signupClient: (input: SignupInput) => Promise<void>;
   logout: () => Promise<void>;
-}
-
-function isWhitelistedAdmin(user: User | null) {
-  return Boolean(
-    user?.email &&
-      user.emailVerified &&
-      ADMIN_EMAIL_SET.has(user.email.toLowerCase()),
-  );
-}
-
-function normalizeProfile(user: User, data?: DocumentData): UserProfile {
-  const createdAtValue = data?.createdAt;
-  const createdAt =
-    typeof createdAtValue === 'string'
-      ? createdAtValue
-      : typeof createdAtValue?.toDate === 'function'
-        ? createdAtValue.toDate().toISOString()
-        : new Date().toISOString();
-
-  let role: UserProfile['role'] = 'client';
-  if (data?.role === 'client' || data?.role === 'staff' || data?.role === 'admin') {
-    role = data.role;
-  } else if (isWhitelistedAdmin(user)) {
-    role = 'admin';
-  }
-
-  return {
-    uid: user.uid,
-    email: data?.email ?? user.email ?? '',
-    displayName: data?.displayName ?? user.displayName ?? '',
-    photoURL: data?.photoURL ?? user.photoURL ?? '',
-    role,
-    createdAt,
-  };
 }
 
 function shouldFallbackToRedirect(error: unknown) {
@@ -75,7 +55,7 @@ export function useProvideAuth(): AuthState {
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!firebaseEnabled || !auth || !db) {
+    if (!firebaseEnabled || !auth) {
       setLoading(false);
       return;
     }
@@ -87,7 +67,7 @@ export function useProvideAuth(): AuthState {
       setAuthError(getFirebaseAuthErrorMessage(error));
     });
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       unsubscribeProfile?.();
       unsubscribeProfile = null;
       setUser(firebaseUser);
@@ -100,36 +80,35 @@ export function useProvideAuth(): AuthState {
 
       setLoading(true);
       setAuthError(null);
-      const userRef = doc(db, 'users', firebaseUser.uid);
 
-      unsubscribeProfile = onSnapshot(
-        userRef,
-        (docSnap) => {
-          const normalizedProfile = normalizeProfile(firebaseUser, docSnap.data());
-          setProfile(normalizedProfile);
+      try {
+        const ensuredProfile = await ensureUserProfile(firebaseUser);
+        if (ensuredProfile) {
+          setProfile(ensuredProfile);
+        } else {
+          setProfile(normalizeUserProfile(firebaseUser.uid, undefined, firebaseUser));
+        }
 
-          if (!docSnap.exists()) {
-            void setDoc(
-              userRef,
-              {
-                ...normalizedProfile,
-                createdAt: serverTimestamp(),
-              },
-              { merge: true },
-            ).catch((error) => {
-              console.error('Error creating profile:', error);
-            });
-          }
-
-          setLoading(false);
-        },
-        (error) => {
-          console.error('Error fetching profile:', error);
-          setProfile(normalizeProfile(firebaseUser));
-          setAuthError(getFirebaseAuthErrorMessage(error));
-          setLoading(false);
-        },
-      );
+        unsubscribeProfile = subscribeToUserProfile(
+          firebaseUser.uid,
+          firebaseUser,
+          (nextProfile) => {
+            setProfile(nextProfile ?? normalizeUserProfile(firebaseUser.uid, undefined, firebaseUser));
+            setLoading(false);
+          },
+          (error) => {
+            console.error('Error fetching profile:', error);
+            setProfile(normalizeUserProfile(firebaseUser.uid, undefined, firebaseUser));
+            setAuthError(getFirebaseAuthErrorMessage(error));
+            setLoading(false);
+          },
+        );
+      } catch (error) {
+        console.error('Error ensuring profile:', error);
+        setProfile(normalizeUserProfile(firebaseUser.uid, undefined, firebaseUser));
+        setAuthError(error instanceof Error ? error.message : getFirebaseAuthErrorMessage(error));
+        setLoading(false);
+      }
     });
 
     return () => {
@@ -169,6 +148,49 @@ export function useProvideAuth(): AuthState {
     }
   };
 
+  const loginWithEmail = async (email: string, password: string) => {
+    if (!firebaseEnabled || !auth) {
+      throw new Error(firebaseSetupMessage);
+    }
+
+    setAuthError(null);
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (error) {
+      console.error('Email sign-in failed:', error);
+      const message = getFirebaseAuthErrorMessage(error);
+      setAuthError(message);
+      throw new Error(message);
+    }
+  };
+
+  const signupClient = async (input: SignupInput) => {
+    if (!firebaseEnabled || !auth) {
+      throw new Error(firebaseSetupMessage);
+    }
+
+    setAuthError(null);
+
+    try {
+      const credentials = await createUserWithEmailAndPassword(auth, input.email, input.password);
+      await updateProfile(credentials.user, { displayName: input.name });
+      await createUserProfile({
+        uid: credentials.user.uid,
+        name: input.name,
+        email: input.email,
+        phone: input.phone,
+        photoURL: credentials.user.photoURL ?? '',
+        role: 'client',
+      });
+    } catch (error) {
+      console.error('Client signup failed:', error);
+      const message = getFirebaseAuthErrorMessage(error);
+      setAuthError(message);
+      throw new Error(message);
+    }
+  };
+
   const logout = async () => {
     if (!auth) {
       return;
@@ -178,10 +200,10 @@ export function useProvideAuth(): AuthState {
     await signOut(auth);
   };
 
-  const adminFromEmail = isWhitelistedAdmin(user);
-  const isAdmin = profile?.role === 'admin' || adminFromEmail;
-  const isStaff = profile?.role === 'staff' || isAdmin;
-  const role: AuthRole = isAdmin ? 'admin' : 'customer';
+  const role = profile?.role ?? null;
+  const isAdmin = role === 'admin';
+  const isStaff = role === 'staff';
+  const isClient = role === 'client';
 
   return {
     user,
@@ -191,7 +213,10 @@ export function useProvideAuth(): AuthState {
     authError,
     isAdmin,
     isStaff,
+    isClient,
     loginWithGoogle,
+    loginWithEmail,
+    signupClient,
     logout,
   };
 }

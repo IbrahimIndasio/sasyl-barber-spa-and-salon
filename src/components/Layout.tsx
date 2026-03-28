@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = React.useState(false);
-  const { user, loginWithGoogle, logout } = useAuth();
+  const { user, role, logout } = useAuth();
   const location = useLocation();
 
   const navLinks = [
@@ -17,19 +17,8 @@ const Navbar = () => {
     { name: 'Contact', path: '/contact' },
   ];
 
-  const handleLogin = async () => {
-    try {
-      await loginWithGoogle();
-    } catch (error) {
-      window.alert(error instanceof Error ? error.message : 'Unable to sign in right now.');
-    }
-  };
-
   const userLabel = user?.displayName?.trim()?.[0] || user?.email?.trim()?.[0] || 'S';
-  const portalLinks = [
-    { name: 'Admin', path: '/admin' },
-    { name: 'Staff', path: '/staff' },
-  ];
+  const dashboardPath = role === 'admin' ? '/admin' : role === 'staff' ? '/staff' : null;
 
   return (
     <nav className="fixed w-full z-50 bg-black/80 backdrop-blur-md border-b border-white/10">
@@ -52,17 +41,16 @@ const Navbar = () => {
                 {link.name}
               </Link>
             ))}
-            {portalLinks.map((link) => (
+            {dashboardPath && (
               <Link
-                key={link.path}
-                to={link.path}
+                to={dashboardPath}
                 className={`text-sm font-medium tracking-widest uppercase transition-colors hover:text-orange-500 ${
-                  location.pathname === link.path ? 'text-orange-500' : 'text-white/70'
+                  location.pathname === dashboardPath ? 'text-orange-500' : 'text-white/70'
                 }`}
               >
-                {link.name}
+                Dashboard
               </Link>
-            ))}
+            )}
             <Link
               to="/booking"
               className="bg-orange-500 text-black px-6 py-2 rounded-full text-sm font-bold tracking-widest uppercase hover:bg-orange-400 transition-all"
@@ -88,13 +76,13 @@ const Navbar = () => {
                 </button>
               </div>
             ) : (
-              <button
-                onClick={handleLogin}
+              <Link
+                to="/login"
                 className="flex items-center space-x-2 text-white/70 hover:text-white text-sm font-medium uppercase tracking-widest"
               >
                 <UserIcon className="h-4 w-4" />
                 <span>Login</span>
-              </button>
+              </Link>
             )}
           </div>
 
@@ -128,16 +116,15 @@ const Navbar = () => {
                   {link.name}
                 </Link>
               ))}
-              {portalLinks.map((link) => (
+              {dashboardPath && (
                 <Link
-                  key={link.path}
-                  to={link.path}
+                  to={dashboardPath}
                   onClick={() => setIsOpen(false)}
                   className="block text-lg font-medium text-white/70 hover:text-orange-500"
                 >
-                  {link.name}
+                  Dashboard
                 </Link>
-              ))}
+              )}
               <Link
                 to="/booking"
                 onClick={() => setIsOpen(false)}
@@ -146,16 +133,16 @@ const Navbar = () => {
                 Book Now
               </Link>
               {!user && (
-                <button
-                  onClick={async () => {
+                <Link
+                  to="/login"
+                  onClick={() => {
                     setIsOpen(false);
-                    await handleLogin();
                   }}
                   className="w-full flex items-center justify-center space-x-2 text-white/70 py-3 border border-white/10 rounded-xl"
                 >
                   <UserIcon className="h-4 w-4" />
-                  <span>Login with Google</span>
-                </button>
+                  <span>Login</span>
+                </Link>
               )}
             </div>
           </motion.div>
@@ -237,8 +224,8 @@ const Footer = () => {
         <div className="border-t border-white/10 pt-8 flex flex-col md:flex-row justify-between items-center text-white/30 text-xs">
           <p>Copyright 2026 Sasyl Barber, Spa and Salon. All rights reserved.</p>
           <div className="mt-4 md:mt-0 space-x-6">
-            <Link to="/staff" className="hover:text-white transition-colors">Staff Login</Link>
-            <Link to="/admin" className="hover:text-white transition-colors">Admin Portal</Link>
+            <Link to="/login" className="hover:text-white transition-colors">Login</Link>
+            <Link to="/signup" className="hover:text-white transition-colors">Create Account</Link>
             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
           </div>
         </div>
