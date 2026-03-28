@@ -1,5 +1,5 @@
-import { initializeApp, type FirebaseOptions } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getApp, getApps, initializeApp, type FirebaseOptions } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import fallbackConfig from '../../firebase-applet-config.json';
 
@@ -14,7 +14,7 @@ function getCurrentHost() {
   return typeof window !== 'undefined' ? window.location.hostname : 'this domain';
 }
 
-function getFirebaseErrorMessage(error: unknown) {
+export function getFirebaseAuthErrorMessage(error: unknown) {
   const errorCode =
     typeof error === 'object' &&
     error !== null &&
@@ -33,6 +33,10 @@ function getFirebaseErrorMessage(error: unknown) {
 
   if (errorCode === 'auth/popup-blocked') {
     return 'Your browser blocked the Google sign-in popup. Allow popups for this site and try again.';
+  }
+
+  if (errorCode === 'auth/network-request-failed') {
+    return 'A network error interrupted Google sign-in. Check your connection and try again.';
   }
 
   if (errorCode === 'auth/cancelled-popup-request') {
@@ -86,10 +90,21 @@ const envConfig = normalizeConfig({
 
 const bundledConfig = normalizeConfig(fallbackConfig as FirebaseClientConfig);
 const firebaseConfig = envConfig ?? bundledConfig;
+export const firebaseConfigSource = envConfig ? 'env' : bundledConfig ? 'fallback' : 'missing';
 
 export const firebaseEnabled = Boolean(firebaseConfig);
 
-const app = firebaseConfig ? initializeApp(firebaseConfig) : null;
+if (firebaseConfigSource === 'fallback' && import.meta.env.PROD) {
+  console.warn(
+    'Using bundled Firebase config in production. Set VITE_FIREBASE_* variables in Vercel for a production-owned Firebase project.',
+  );
+}
+
+const app = firebaseConfig
+  ? getApps().length > 0
+    ? getApp()
+    : initializeApp(firebaseConfig)
+  : null;
 
 export const auth = app ? getAuth(app) : null;
 export const db = app
@@ -98,20 +113,5 @@ export const db = app
     : getFirestore(app)
   : null;
 
-const googleProvider = new GoogleAuthProvider();
-
-export const signInWithGoogle = async () => {
-  if (!auth) {
-    throw new Error(firebaseSetupMessage);
-  }
-
-  try {
-    const result = await signInWithPopup(auth, googleProvider);
-    return result.user;
-  } catch (error) {
-    console.error('Error signing in with Google:', error);
-    throw new Error(getFirebaseErrorMessage(error));
-  }
-};
-
-export const logout = () => (auth ? signOut(auth) : Promise.resolve());
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });

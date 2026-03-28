@@ -31,9 +31,16 @@ service cloud.firestore {
     // Fields:
     //   - id: string (required)
     //   - userId: string (required)
+    //   - userEmail: string (optional)
+    //   - userName: string (optional)
+    //   - name: string (optional)
     //   - serviceId: string (required)
+    //   - serviceName: string (optional)
+    //   - service: string (optional)
+    //   - price: number (optional)
     //   - staffId: string (optional)
     //   - date: timestamp (required)
+    //   - time: string (optional)
     //   - status: string (required, ['pending', 'confirmed', 'cancelled', 'completed'])
     //   - notes: string (optional)
     //   - createdAt: timestamp (required)
@@ -99,11 +106,35 @@ service cloud.firestore {
     }
 
     function isValidBooking(data) {
-      return hasOnlyAllowedFields(['id', 'userId', 'serviceId', 'staffId', 'date', 'status', 'notes', 'createdAt']) &&
+      return hasOnlyAllowedFields([
+          'id',
+          'userId',
+          'userEmail',
+          'userName',
+          'name',
+          'serviceId',
+          'serviceName',
+          'service',
+          'price',
+          'staffId',
+          'date',
+          'time',
+          'status',
+          'notes',
+          'createdAt'
+        ]) &&
         data.userId is string && data.serviceId is string &&
         data.date is timestamp &&
         data.status in ['pending', 'confirmed', 'cancelled', 'completed'] &&
-        data.createdAt is timestamp;
+        data.createdAt is timestamp &&
+        (!data.keys().hasAny(['userEmail']) || isValidEmail(data.userEmail)) &&
+        (!data.keys().hasAny(['userName']) || data.userName is string) &&
+        (!data.keys().hasAny(['name']) || data.name is string) &&
+        (!data.keys().hasAny(['serviceName']) || data.serviceName is string) &&
+        (!data.keys().hasAny(['service']) || data.service is string) &&
+        (!data.keys().hasAny(['price']) || (data.price is number && data.price >= 0)) &&
+        (!data.keys().hasAny(['time']) || data.time is string) &&
+        (!data.keys().hasAny(['notes']) || data.notes is string);
     }
 
     // ===============================================================

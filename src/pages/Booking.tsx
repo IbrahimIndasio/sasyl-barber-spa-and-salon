@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { AnimatePresence, motion } from 'framer-motion';
 import { AlertCircle, Calendar, CheckCircle2, ChevronRight, Clock, Scissors, Sparkles, Star } from 'lucide-react';
-import { Timestamp, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { db, firebaseEnabled, firebaseSetupMessage, signInWithGoogle } from '../lib/firebase';
+import { clearBookingDraft, loadBookingDraft, saveBookingDraft } from '../lib/bookingDraft';
+import { firebaseEnabled, firebaseSetupMessage } from '../lib/firebase';
+import { createBooking } from '../services/bookingService';
 import { cn } from '../lib/utils';
 
 const services = [
@@ -18,51 +19,58 @@ const services = [
   { id: 'moroccan', name: 'Moroccan Bath', price: 4500, category: 'Spa', icon: Star },
 ];
 
+const serviceMap = new Map(services.map((service) => [service.id, service]));
+
 const timeSlots = [
   '08:00 AM', '09:00 AM', '10:00 AM', '11:00 AM',
   '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM',
   '04:00 PM', '05:00 PM', '06:00 PM', '07:00 PM',
 ];
 
-function buildBookingDate(date: Date, time: string) {
-  const [hourText, minuteText] = time.split(':');
-  const [minuteValue, period] = minuteText.split(' ');
-  let hours = Number.parseInt(hourText, 10);
-  const minutes = Number.parseInt(minuteValue, 10);
-
-  if (period === 'PM' && hours !== 12) {
-    hours += 12;
-  }
-
-  if (period === 'AM' && hours === 12) {
-    hours = 0;
-  }
-
-  const bookingDate = new Date(date);
-  bookingDate.setHours(hours, minutes, 0, 0);
-  return bookingDate;
-}
-
 export default function Booking() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, loginWithGoogle } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedService, setSelectedService] = useState<typeof services[0] | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTime, setSelectedTime] = useState<string | null>(null);
+  const [continueAfterLogin, setContinueAfterLogin] = useState(false);
   const [bookingStatus, setBookingStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const autoSubmitRef = useRef(false);
 
-  const handleLogin = async () => {
-    try {
-      setErrorMessage(null);
-      await signInWithGoogle();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
+  useEffect(() => {
+    const savedDraft = loadBookingDraft();
+    if (!savedDraft) {
+      return;
     }
-  };
+
+    const restoredService = savedDraft.serviceId ? serviceMap.get(savedDraft.serviceId) ?? null : null;
+    const restoredDate = savedDraft.date ? new Date(savedDraft.date) : null;
+
+    setSelectedService(restoredService);
+    setSelectedDate(restoredDate && !Number.isNaN(restoredDate.getTime()) ? restoredDate : new Date());
+    setSelectedTime(savedDraft.time);
+    setStep(savedDraft.step);
+    setContinueAfterLogin(savedDraft.continueAfterLogin);
+  }, []);
+
+  useEffect(() => {
+    if (bookingStatus === 'success') {
+      clearBookingDraft();
+      return;
+    }
+
+    saveBookingDraft({
+      serviceId: selectedService?.id ?? null,
+      date: selectedDate ? selectedDate.toISOString() : null,
+      time: selectedTime,
+      step,
+      continueAfterLogin,
+    });
+  }, [bookingStatus, continueAfterLogin, selectedDate, selectedService, selectedTime, step]);
 
   const handleBooking = async () => {
-    if (!user || !db || !selectedService || !selectedDate || !selectedTime) {
+    if (!user || !selectedService || !selectedDate || !selectedTime) {
       return;
     }
 
@@ -70,25 +78,62 @@ export default function Booking() {
     setErrorMessage(null);
 
     try {
-      const bookingDate = buildBookingDate(selectedDate, selectedTime);
-
-      await addDoc(collection(db, 'bookings'), {
+      await createBooking({
         userId: user.uid,
-        userEmail: user.email ?? profile?.email ?? '',
-        userName: user.displayName ?? profile?.displayName ?? 'Client',
+        email: user.email ?? profile?.email ?? '',
+        name: user.displayName ?? profile?.displayName ?? 'Client',
         serviceId: selectedService.id,
         serviceName: selectedService.name,
         price: selectedService.price,
-        date: Timestamp.fromDate(bookingDate),
-        status: 'pending',
-        createdAt: serverTimestamp(),
+        date: selectedDate,
+        time: selectedTime,
       });
 
+      clearBookingDraft();
+      autoSubmitRef.current = false;
+      setContinueAfterLogin(false);
       setBookingStatus('success');
     } catch (error) {
       console.error('Booking error:', error);
+      autoSubmitRef.current = false;
       setBookingStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Unable to complete your booking.');
+    }
+  };
+
+  useEffect(() => {
+    if (
+      !user ||
+      !continueAfterLogin ||
+      !selectedService ||
+      !selectedDate ||
+      !selectedTime ||
+      bookingStatus !== 'idle' ||
+      autoSubmitRef.current
+    ) {
+      return;
+    }
+
+    autoSubmitRef.current = true;
+    void handleBooking();
+  }, [bookingStatus, continueAfterLogin, selectedDate, selectedService, selectedTime, user]);
+
+  const handleLogin = async () => {
+    setContinueAfterLogin(true);
+    setErrorMessage(null);
+    saveBookingDraft({
+      serviceId: selectedService?.id ?? null,
+      date: selectedDate ? selectedDate.toISOString() : null,
+      time: selectedTime,
+      step,
+      continueAfterLogin: true,
+    });
+
+    try {
+      await loginWithGoogle();
+    } catch (error) {
+      setContinueAfterLogin(false);
+      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
     }
   };
 
@@ -268,7 +313,7 @@ export default function Booking() {
                       </div>
                       <h4 className="text-3xl font-bold mb-4">Booking Confirmed!</h4>
                       <p className="text-white/50 mb-12 max-w-md mx-auto">
-                        Your appointment has been saved successfully. The staff dashboard can now manage it in Firestore.
+                        Your appointment has been saved successfully. The staff and admin dashboards can now manage it in Firestore.
                       </p>
                       <div className="bg-white/5 border border-white/10 rounded-3xl p-8 text-left max-w-md mx-auto mb-12">
                         <div className="flex justify-between mb-4">
@@ -343,7 +388,7 @@ export default function Booking() {
                           ) : (
                             <div className="text-center py-8">
                               <p className="text-white/50 mb-6">Please login to complete your booking.</p>
-                              <button onClick={handleLogin} className="bg-white text-black px-8 py-3 rounded-full font-bold uppercase tracking-widest text-xs disabled:opacity-50" disabled={!firebaseEnabled}>
+                              <button onClick={handleLogin} className="bg-white text-black px-8 py-3 rounded-full font-bold uppercase tracking-widest text-xs disabled:opacity-50" disabled={!firebaseEnabled || bookingStatus === 'submitting'}>
                                 Login with Google
                               </button>
                             </div>
@@ -359,7 +404,7 @@ export default function Booking() {
                           Back
                         </button>
                         <button
-                          disabled={!user || !db || bookingStatus === 'submitting'}
+                          disabled={!user || bookingStatus === 'submitting'}
                           onClick={handleBooking}
                           className="bg-orange-500 text-black px-12 py-5 rounded-full font-bold uppercase tracking-widest hover:bg-orange-400 transition-all disabled:opacity-50 flex items-center space-x-3"
                         >

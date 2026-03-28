@@ -13,10 +13,12 @@ export function normalizeBookingRecord(id: string, data: DocumentData): Booking 
   return {
     id,
     userId: data.userId ?? '',
+    name: data.name ?? data.userName ?? 'Client',
     userEmail: data.userEmail ?? '',
-    userName: data.userName ?? 'Client',
+    userName: data.userName ?? data.name ?? 'Client',
     serviceId: data.serviceId ?? '',
-    serviceName: data.serviceName ?? 'Service',
+    service: data.service ?? data.serviceName ?? 'Service',
+    serviceName: data.serviceName ?? data.service ?? 'Service',
     price: typeof data.price === 'number' ? data.price : 0,
     staffId: data.staffId,
     date:
@@ -25,6 +27,7 @@ export function normalizeBookingRecord(id: string, data: DocumentData): Booking 
         : typeof dateValue?.toDate === 'function'
           ? dateValue.toDate().toISOString()
           : new Date().toISOString(),
+    time: typeof data.time === 'string' ? data.time : undefined,
     status:
       data.status === 'confirmed' ||
       data.status === 'cancelled' ||

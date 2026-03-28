@@ -10,12 +10,10 @@ import {
   DollarSign,
   LayoutDashboard,
   ShieldCheck,
-  XCircle,
 } from 'lucide-react';
-import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { db, firebaseEnabled, firebaseSetupMessage, signInWithGoogle } from '../lib/firebase';
-import { getBookingMetrics, normalizeBookingSnapshot } from '../lib/bookings';
+import { getBookingMetrics } from '../lib/bookings';
+import { subscribeToAllBookings, updateBookingStatus } from '../services/bookingService';
 import type { Booking } from '../types';
 import { cn } from '../lib/utils';
 
@@ -31,20 +29,22 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-function formatBookingDate(dateValue: string) {
+function formatBookingDate(dateValue: string, time?: string) {
   const parsedDate = new Date(dateValue);
   if (Number.isNaN(parsedDate.getTime())) {
-    return 'Invalid date';
+    return time ?? 'Invalid date';
   }
 
-  return `${parsedDate.toLocaleDateString()} at ${parsedDate.toLocaleTimeString([], {
+  const timeLabel = time ?? parsedDate.toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit',
-  })}`;
+  });
+
+  return `${parsedDate.toLocaleDateString()} at ${timeLabel}`;
 }
 
-export default function Admin() {
-  const { user, profile, isAdmin, loading: authLoading } = useAuth();
+export default function AdminDashboard() {
+  const { user, profile } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -59,33 +59,11 @@ export default function Admin() {
     return bookings.filter((booking) => booking.status === activeFilter);
   }, [activeFilter, bookings]);
 
-  const handleLogin = async () => {
-    try {
-      setErrorMessage(null);
-      await signInWithGoogle();
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
-    }
-  };
-
   useEffect(() => {
-    if (!firebaseEnabled || !db) {
-      setLoading(false);
-      return;
-    }
-
-    if (!isAdmin) {
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
-    const bookingsQuery = query(collection(db, 'bookings'), orderBy('date', 'desc'));
-
-    const unsubscribe = onSnapshot(
-      bookingsQuery,
-      (snapshot) => {
-        setBookings(snapshot.docs.map(normalizeBookingSnapshot));
+    const unsubscribe = subscribeToAllBookings(
+      (nextBookings) => {
+        setBookings(nextBookings);
         setLoading(false);
         setErrorMessage(null);
       },
@@ -97,82 +75,16 @@ export default function Admin() {
     );
 
     return () => unsubscribe();
-  }, [isAdmin]);
+  }, []);
 
-  const updateStatus = async (id: string, status: Booking['status']) => {
-    if (!db) {
-      return;
-    }
-
+  const handleStatusChange = async (id: string, status: Booking['status']) => {
     try {
-      await updateDoc(doc(db, 'bookings', id), { status });
+      await updateBookingStatus(id, status);
     } catch (error) {
       console.error('Error updating status:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to update booking status.');
     }
   };
-
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-orange-500"></div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-[40px] p-12 text-center">
-          <ShieldCheck className="h-16 w-16 text-orange-500 mx-auto mb-8" />
-          <h1 className="text-3xl font-bold mb-4 uppercase tracking-tighter">Admin Portal</h1>
-          <p className="text-white/50 mb-10">
-            {firebaseEnabled
-              ? 'Login with an admin account to view reports and manage bookings.'
-              : firebaseSetupMessage}
-          </p>
-          {errorMessage && <p className="mb-6 text-sm text-red-300">{errorMessage}</p>}
-          <button
-            onClick={handleLogin}
-            className="w-full bg-orange-500 text-black py-4 rounded-full font-bold uppercase tracking-widest hover:bg-orange-400 transition-all disabled:opacity-50"
-            disabled={!firebaseEnabled}
-          >
-            Login with Google
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white/5 border border-white/10 rounded-[40px] p-12 text-center">
-          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-8" />
-          <h1 className="text-3xl font-bold mb-4 uppercase tracking-tighter">Admin Access Denied</h1>
-          <p className="text-white/50 mb-6">
-            Your signed-in account is not marked as an admin. Set `/users/{'{'}userId{'}'}.role` to `admin` in Firestore or use the configured admin account.
-          </p>
-          <div className="flex flex-col gap-4">
-            <Link
-              to="/staff"
-              className="w-full rounded-full bg-orange-500 px-6 py-4 text-center font-bold uppercase tracking-widest text-black transition-all hover:bg-orange-400"
-            >
-              Open Staff Dashboard
-            </Link>
-            <button
-              onClick={() => {
-                window.location.href = '/';
-              }}
-              className="w-full rounded-full border border-white/10 px-6 py-4 font-bold uppercase tracking-widest text-white/60 transition-all hover:border-white/20 hover:text-white"
-            >
-              Return Home
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-black min-h-screen pb-24">
@@ -197,16 +109,16 @@ export default function Admin() {
               Open Staff View
             </Link>
             <div className="flex items-center space-x-4 rounded-2xl border border-white/10 bg-white/5 p-4">
-              {user.photoURL ? (
+              {user?.photoURL ? (
                 <img src={user.photoURL} alt="" className="h-12 w-12 rounded-full" />
               ) : (
                 <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-sm font-bold uppercase">
-                  {user.displayName?.trim()?.[0] || user.email?.trim()?.[0] || 'A'}
+                  {user?.displayName?.trim()?.[0] || user?.email?.trim()?.[0] || 'A'}
                 </div>
               )}
               <div>
-                <p className="font-bold">{user.displayName || profile?.displayName || 'Admin'}</p>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">{profile?.role || 'admin'}</p>
+                <p className="font-bold">{user?.displayName || profile?.displayName || 'Admin'}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-orange-500">admin</p>
               </div>
             </div>
           </div>
@@ -239,16 +151,16 @@ export default function Admin() {
                 icon: CalendarClock,
               },
               {
-                label: 'Today',
-                value: metrics.todayBookings.toString(),
-                detail: `${metrics.upcomingBookings} upcoming`,
-                icon: BarChart3,
+                label: 'Total Revenue',
+                value: formatCurrency(metrics.scheduledRevenue),
+                detail: `${metrics.totalBookings} tracked bookings`,
+                icon: DollarSign,
               },
               {
                 label: 'Completed Revenue',
                 value: formatCurrency(metrics.completedRevenue),
-                detail: `${formatCurrency(metrics.scheduledRevenue)} scheduled`,
-                icon: DollarSign,
+                detail: `${metrics.todayBookings} bookings today`,
+                icon: BarChart3,
               },
             ].map((card) => (
               <motion.div
@@ -339,7 +251,7 @@ export default function Admin() {
               <div>
                 <div className="mb-2 flex items-center space-x-3">
                   <ShieldCheck className="h-5 w-5 text-orange-500" />
-                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-orange-500">Live Bookings</span>
+                  <span className="text-xs font-bold uppercase tracking-[0.25em] text-orange-500">Recent Bookings</span>
                 </div>
                 <h2 className="text-2xl font-bold uppercase tracking-tight">Manage Appointments</h2>
               </div>
@@ -373,7 +285,7 @@ export default function Admin() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-6">
-                {filteredBookings.map((booking) => (
+                {filteredBookings.slice(0, 10).map((booking) => (
                   <motion.div
                     key={booking.id}
                     initial={{ opacity: 0, y: 10 }}
@@ -397,13 +309,13 @@ export default function Admin() {
                           {booking.status}
                         </span>
                         <span className="text-xs font-medium uppercase tracking-widest text-white/40">
-                          {formatBookingDate(booking.date)}
+                          {formatBookingDate(booking.date, booking.time)}
                         </span>
                       </div>
                       <div>
-                        <h3 className="text-2xl font-bold">{booking.serviceName}</h3>
+                        <h3 className="text-2xl font-bold">{booking.serviceName || booking.service}</h3>
                         <p className="text-sm text-white/50">
-                          {booking.userName || 'Client'} {booking.userEmail ? `(${booking.userEmail})` : ''}
+                          {booking.userName || booking.name || 'Client'} {booking.userEmail ? `(${booking.userEmail})` : ''}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-4 text-sm text-white/45">
@@ -415,7 +327,9 @@ export default function Admin() {
                     <div className="flex flex-wrap gap-3 md:justify-end">
                       {booking.status === 'pending' && (
                         <button
-                          onClick={() => updateStatus(booking.id, 'confirmed')}
+                          onClick={() => {
+                            void handleStatusChange(booking.id, 'confirmed');
+                          }}
                           className="rounded-xl bg-green-500 px-5 py-3 text-xs font-bold uppercase tracking-widest text-black transition-all hover:bg-green-400"
                         >
                           Confirm
@@ -423,7 +337,9 @@ export default function Admin() {
                       )}
                       {booking.status !== 'completed' && booking.status !== 'cancelled' && (
                         <button
-                          onClick={() => updateStatus(booking.id, 'completed')}
+                          onClick={() => {
+                            void handleStatusChange(booking.id, 'completed');
+                          }}
                           className="rounded-xl bg-blue-500 px-5 py-3 text-xs font-bold uppercase tracking-widest text-white transition-all hover:bg-blue-400"
                         >
                           Complete
@@ -431,7 +347,9 @@ export default function Admin() {
                       )}
                       {booking.status !== 'cancelled' && (
                         <button
-                          onClick={() => updateStatus(booking.id, 'cancelled')}
+                          onClick={() => {
+                            void handleStatusChange(booking.id, 'cancelled');
+                          }}
                           className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-xs font-bold uppercase tracking-widest text-white/55 transition-all hover:border-red-500 hover:bg-red-500 hover:text-white"
                         >
                           Cancel

@@ -3,11 +3,10 @@ import { Link, useLocation } from 'react-router-dom';
 import { Facebook, Instagram, MapPin, Menu, Phone, Scissors, User as UserIcon, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { logout, signInWithGoogle } from '../lib/firebase';
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = React.useState(false);
-  const { user } = useAuth();
+  const { user, loginWithGoogle, logout } = useAuth();
   const location = useLocation();
 
   const navLinks = [
@@ -20,7 +19,7 @@ const Navbar = () => {
 
   const handleLogin = async () => {
     try {
-      await signInWithGoogle();
+      await loginWithGoogle();
     } catch (error) {
       window.alert(error instanceof Error ? error.message : 'Unable to sign in right now.');
     }
@@ -80,7 +79,9 @@ const Navbar = () => {
                   </div>
                 )}
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    void logout();
+                  }}
                   className="text-white/50 hover:text-white text-xs uppercase tracking-widest"
                 >
                   Logout

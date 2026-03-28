@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { Layout } from './components/Layout';
+import { ProtectedRoute } from './components/ProtectedRoute';
 import Home from './pages/Home';
 import Services from './pages/Services';
 import Gallery from './pages/Gallery';
@@ -8,7 +9,7 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import Booking from './pages/Booking';
 import Staff from './pages/Staff';
-import Admin from './pages/Admin';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
   return (
@@ -23,7 +24,14 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/booking" element={<Booking />} />
             <Route path="/staff" element={<Staff />} />
-            <Route path="/admin" element={<Admin />} />
+            <Route
+              path="/admin"
+              element={(
+                <ProtectedRoute requireAdmin>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              )}
+            />
           </Routes>
         </Layout>
       </Router>

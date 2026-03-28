@@ -2,15 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { AlertCircle, Calendar, LayoutDashboard, LogIn, User, XCircle } from 'lucide-react';
-import { collection, doc, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
-import { db, firebaseEnabled, firebaseSetupMessage, signInWithGoogle } from '../lib/firebase';
+import { firebaseEnabled, firebaseSetupMessage } from '../lib/firebase';
+import { subscribeToAllBookings, updateBookingStatus } from '../services/bookingService';
 import { Booking } from '../types';
-import { normalizeBookingSnapshot } from '../lib/bookings';
 import { cn } from '../lib/utils';
 
 export default function Staff() {
-  const { user, profile, isAdmin, isStaff, loading: authLoading } = useAuth();
+  const { user, profile, isAdmin, isStaff, loading: authLoading, loginWithGoogle } = useAuth();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -18,14 +17,14 @@ export default function Staff() {
   const handleLogin = async () => {
     try {
       setErrorMessage(null);
-      await signInWithGoogle();
+      await loginWithGoogle();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Unable to sign in right now.');
     }
   };
 
   useEffect(() => {
-    if (!firebaseEnabled || !db) {
+    if (!firebaseEnabled) {
       setLoading(false);
       return;
     }
@@ -36,12 +35,9 @@ export default function Staff() {
     }
 
     setLoading(true);
-    const bookingsQuery = query(collection(db, 'bookings'), orderBy('date', 'desc'));
-
-    const unsubscribe = onSnapshot(
-      bookingsQuery,
+    const unsubscribe = subscribeToAllBookings(
       (snapshot) => {
-        setBookings(snapshot.docs.map(normalizeBookingSnapshot));
+        setBookings(snapshot);
         setLoading(false);
         setErrorMessage(null);
       },
@@ -56,12 +52,8 @@ export default function Staff() {
   }, [isStaff]);
 
   const updateStatus = async (id: string, status: Booking['status']) => {
-    if (!db) {
-      return;
-    }
-
     try {
-      await updateDoc(doc(db, 'bookings', id), { status });
+      await updateBookingStatus(id, status);
     } catch (error) {
       console.error('Error updating status:', error);
       setErrorMessage(error instanceof Error ? error.message : 'Unable to update booking status.');

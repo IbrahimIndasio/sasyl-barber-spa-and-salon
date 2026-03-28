@@ -23,13 +23,16 @@ export interface Service {
 export interface Booking {
   id: string;
   userId: string;
+  name?: string;
   userEmail?: string;
   userName?: string;
   serviceId: string;
+  service?: string;
   serviceName?: string;
   price?: number;
   staffId?: string;
   date: string;
+  time?: string;
   status: BookingStatus;
   notes?: string;
   createdAt?: string;
